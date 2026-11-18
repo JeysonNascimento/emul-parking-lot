@@ -62,6 +62,7 @@ static int motor_start(struct barrier *b, bool open, int64_t now_ms)
 	int rc;
 
 	hw_sched_lock();
+	b->deadline_ms = now_ms + MOTOR_DEADLINE_MS;
 	rc = hw_out_set(b->lane, HW_OUT_DIRECTION, open);
 	if (rc == 0) {
 		atomic_set(&b->flags, 0);
@@ -75,7 +76,8 @@ static int motor_start(struct barrier *b, bool open, int64_t now_ms)
 		return -EIO;
 	}
 	b->state = open ? BARRIER_OPENING : BARRIER_CLOSING;
-	b->deadline_ms = now_ms + MOTOR_DEADLINE_MS;
+	/* O prazo é conferido também pela work agendada para o instante exato. */
+	hw_wake_after(b->lane, MOTOR_DEADLINE_MS);
 	/* O fim de curso pode já estar lá: confere na hora. */
 	barrier_safety(b);
 	return 0;
@@ -136,6 +138,11 @@ void barrier_safety(struct barrier *b)
 		motor_off(b);
 		atomic_set(&b->motion, BARRIER_MOTION_NONE);
 		atomic_or(&b->flags, BARRIER_FLAG_ARRIVED);
+	} else if (motion != BARRIER_MOTION_NONE && hw_now_ms() >= b->deadline_ms) {
+		/* REQ-06: o modelo nunca desliga o motor; o prazo desliga. */
+		motor_off(b);
+		atomic_set(&b->motion, BARRIER_MOTION_NONE);
+		atomic_or(&b->flags, BARRIER_FLAG_DEADLINE);
 	}
 }
 
@@ -161,8 +168,7 @@ enum barrier_state barrier_step(struct barrier *b, int64_t now_ms)
 			barrier_fail(b, BARRIER_FAULT_OBSTRUCTION);
 		} else if ((flags & BARRIER_FLAG_ARRIVED) != 0) {
 			b->state = opening ? BARRIER_OPEN : BARRIER_CLOSED;
-		} else if (now_ms >= b->deadline_ms) {
-			/* REQ-06: o modelo nunca desliga o motor; o prazo desliga. */
+		} else if ((flags & BARRIER_FLAG_DEADLINE) != 0 || now_ms >= b->deadline_ms) {
 			barrier_fail(b, BARRIER_FAULT_DEADLINE);
 		}
 	} else if (b->state == BARRIER_CLOSED && hw_in_get(b->lane, HW_IN_LOWER) != 1) {

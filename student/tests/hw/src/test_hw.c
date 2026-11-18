@@ -8,6 +8,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
+#include "display.h"
 #include "hw.h"
 
 static int handler_calls;
@@ -94,4 +95,33 @@ ZTEST(hw, test_sched_lock_pairs)
 	hw_sched_lock();
 	hw_sched_unlock();
 	zassert_equal(handler_calls, 0, "nenhuma entrada mudou");
+}
+
+ZTEST(hw, test_display_draws_charge_screen_quickly)
+{
+	int64_t start;
+	int64_t elapsed;
+
+	zassert_ok(display_init());
+	start = hw_now_ms();
+	zassert_ok(display_show_plate("ABC1D23"));
+	zassert_ok(display_show_amount(400));
+	elapsed = hw_now_ms() - start;
+	printk("DISPLAY: tela desenhada em %lld ms\n", elapsed);
+	/* O laço não pode ficar parado perto do prazo do ADC (100 ms). */
+	zassert_true(elapsed < 50, "desenho levou %lld ms", elapsed);
+}
+
+ZTEST(hw, test_display_rejects_text_outside_screen)
+{
+	zassert_equal(display_text(DISPLAY_W - 5, 0, "A"), -EINVAL);
+	zassert_equal(display_text(0, DISPLAY_H - 5, "A"), -EINVAL);
+}
+
+ZTEST(hw, test_entropy_changes)
+{
+	uint32_t a = hw_entropy();
+
+	k_busy_wait(10);
+	zassert_true(hw_entropy() != a);
 }

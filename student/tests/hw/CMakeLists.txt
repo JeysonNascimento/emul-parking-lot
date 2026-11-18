@@ -9,4 +9,7 @@ target_include_directories(app PRIVATE ../../src)
 target_sources(app PRIVATE
 	src/test_hw.c
 	../../src/hw.c
+	../../src/display.c
+	../../src/font.c
+	../../src/tariff.c
 )

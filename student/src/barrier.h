@@ -46,6 +46,7 @@ enum barrier_fault {
 #define BARRIER_FLAG_OBSTRUCTED BIT(1)    /* parou por obstrução */
 #define BARRIER_FLAG_CONTRADICTORY BIT(2) /* fins de curso contraditórios */
 #define BARRIER_FLAG_IO BIT(3)            /* erro de driver */
+#define BARRIER_FLAG_DEADLINE BIT(4)      /* prazo do movimento estourou */
 
 struct barrier {
 	enum lane_id lane;
@@ -75,8 +76,9 @@ int barrier_close(struct barrier *b, int64_t now_ms);
 void barrier_fail(struct barrier *b, enum barrier_fault fault);
 
 /**
- * Parada urgente. Chamado pela work de entrada e também a cada tick.
- * Lê as entradas e desliga o motor se for o caso; nunca liga nada.
+ * Parada urgente. Chamado pela work de entrada (EXTI ou prazo) e também a
+ * cada tick. Lê as entradas e o relógio e desliga o motor se for o caso;
+ * nunca liga nada.
  */
 void barrier_safety(struct barrier *b);
 

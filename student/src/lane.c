@@ -16,7 +16,9 @@
 
 #include "adc_sampler.h"
 #include "config.h"
+#include "display.h"
 #include "sessions.h"
+#include "tariff.h"
 
 /* Câmera de cada faixa. */
 static const enum hw_uart camera_uart[LANE_COUNT] = {
@@ -33,6 +35,28 @@ void lane_init(struct lane *l, enum lane_id id)
 	l->next_capture_id = 1;
 	barrier_init(&l->barrier, id);
 	lp_init(&l->cam_parser, true);
+	lp_init(&l->pay_parser, false);
+}
+
+/*
+ * REQ-05: invalida a cobrança ativa ANTES de mandar o CANCEL. Depois disso
+ * nenhuma resposta, nem a deste UUID, autoriza nada.
+ */
+static void cancel_charge(struct lane *l)
+{
+	char cmd[UART_FRAME_MAX];
+	char old[UUID_BUF];
+	int n;
+
+	if (l->uuid[0] == '\0') {
+		return;
+	}
+	memcpy(old, l->uuid, sizeof(old));
+	l->uuid[0] = '\0';
+	n = payment_format_cancel(cmd, sizeof(cmd), old);
+	if (n > 0) {
+		(void)hw_uart_write(HW_UART_PAYMENT, cmd, (size_t)n);
+	}
 }
 
 /*
@@ -61,6 +85,7 @@ static void assist(struct lane *l, bool latched, int64_t now_ms)
 		l->buzzer_off_ms = now_ms + BUZZER_PULSE_MS;
 	}
 	l->capture_id = 0;
+	cancel_charge(l);
 	if (latched || l->state == LANE_LOCKED) {
 		l->state = LANE_LOCKED;
 	} else {
@@ -126,6 +151,16 @@ static void next_attempt(struct lane *l, int64_t now_ms)
 	start_capture(l, now_ms);
 }
 
+/* Envia (ou reenvia) exatamente a mesma linha de cobrança. */
+static void send_charge(struct lane *l, int64_t now_ms)
+{
+	l->sends++;
+	l->deadline_ms = now_ms + PAYMENT_TIMEOUT_MS;
+	if (hw_uart_write(HW_UART_PAYMENT, l->charge_line, l->charge_len) != 0) {
+		assist(l, true, now_ms);
+	}
+}
+
 /* Começa a abrir para a placa aceita. */
 static void open_barrier(struct lane *l, int64_t now_ms)
 {
@@ -134,6 +169,40 @@ static void open_barrier(struct lane *l, int64_t now_ms)
 		return;
 	}
 	l->state = LANE_OPENING;
+}
+
+/*
+ * REQ-05/12: começa a cobrança da saída. Ordem exigida: desenha a placa,
+ * congela a tarifa, desenha valor e avisos e só então manda o CHARGE.
+ */
+static void start_payment(struct lane *l, int64_t entry_ms, int64_t now_ms)
+{
+	int n;
+
+	if (display_show_plate(l->plate) != 0) {
+		assist(l, false, now_ms);
+		return;
+	}
+	if (tariff_compute(now_ms - entry_ms, CONFIG_PARKING_TARIFF_UNIT_MS, &l->amount) != 0) {
+		/* Mais de TARIFF_MAX_UNITS unidades: não cobra, pede ajuda. */
+		assist(l, false, now_ms);
+		return;
+	}
+	if (display_show_amount(l->amount) != 0) {
+		assist(l, false, now_ms);
+		return;
+	}
+	payment_new_uuid(l->uuid, hw_entropy());
+	n = payment_format_charge(l->charge_line, sizeof(l->charge_line), l->uuid, l->plate,
+				  l->amount);
+	if (n < 0) {
+		assist(l, false, now_ms);
+		return;
+	}
+	l->charge_len = (size_t)n;
+	l->sends = 0;
+	l->state = LANE_PAYING;
+	send_charge(l, now_ms);
 }
 
 /* REQ-04: placa aceita; decide pelas sessões. */
@@ -159,8 +228,7 @@ static void plate_accepted(struct lane *l, const char *plate, int64_t now_ms)
 			assist(l, false, now_ms);
 			return;
 		}
-		/* Pagamento ainda não implementado: por ora, assistência. */
-		assist(l, false, now_ms);
+		start_payment(l, entry_ms, now_ms);
 	}
 }
 
@@ -188,6 +256,53 @@ static void camera_service(struct lane *l, int64_t now_ms)
 			} else {
 				next_attempt(l, now_ms);
 			}
+		}
+	}
+}
+
+/* Consome os bytes do terminal (só na saída) e trata as linhas completas. */
+static void payment_service(struct lane *l, int64_t now_ms)
+{
+	uint8_t chunk[16];
+	size_t n;
+
+	while ((n = hw_uart_read(HW_UART_PAYMENT, chunk, sizeof(chunk))) > 0) {
+		for (size_t i = 0; i < n; i++) {
+			struct payment_msg msg;
+
+			if (lp_feed(&l->pay_parser, chunk[i], now_ms) != LP_LINE) {
+				continue;
+			}
+			payment_parse(lp_line(&l->pay_parser), &msg);
+			/* Só vale a resposta da cobrança ativa, enquanto se espera. */
+			if (l->state != LANE_PAYING || l->uuid[0] == '\0' ||
+			    (msg.kind != PAYMENT_PAID && msg.kind != PAYMENT_CANCELLED) ||
+			    strcmp(msg.uuid, l->uuid) != 0) {
+				continue;
+			}
+			if (msg.kind == PAYMENT_PAID && msg.amount == l->amount) {
+				/* PAID exato e atual: a cobrança termina aqui. */
+				l->uuid[0] = '\0';
+				open_barrier(l, now_ms);
+			} else if (msg.kind == PAYMENT_CANCELLED) {
+				assist(l, false, now_ms);
+			}
+			/* PAID com outro valor: ignora (não abre). */
+		}
+	}
+}
+
+/* REQ-05: prazo de resposta e abandono durante o pagamento. */
+static void paying_step(struct lane *l, int64_t now_ms)
+{
+	if (l->dist_fresh && l->dist > DIST_ABSENT_ABOVE) {
+		/* O carro foi embora: invalida, cancela e pede ajuda. */
+		assist(l, false, now_ms);
+	} else if (now_ms >= l->deadline_ms) {
+		if (l->sends < PAYMENT_MAX_SENDS) {
+			send_charge(l, now_ms);
+		} else {
+			assist(l, false, now_ms);
 		}
 	}
 }
@@ -245,6 +360,9 @@ static void state_step(struct lane *l, int64_t now_ms)
 		} else if (now_ms >= l->deadline_ms) {
 			next_attempt(l, now_ms);
 		}
+		break;
+	case LANE_PAYING:
+		paying_step(l, now_ms);
 		break;
 	case LANE_OPENING:
 		if (l->barrier.state == BARRIER_OPEN) {
@@ -309,6 +427,9 @@ void lane_step(struct lane *l, int64_t now_ms)
 	}
 
 	camera_service(l, now_ms);
+	if (l->id == LANE_EXIT) {
+		payment_service(l, now_ms);
+	}
 	state_step(l, now_ms);
 }
 

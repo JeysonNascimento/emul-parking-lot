@@ -15,11 +15,13 @@
 #include "camera.h"
 #include "hw.h"
 #include "line_parser.h"
+#include "payment.h"
 
 enum lane_state {
 	LANE_BOOT = 0, /* partida: motor desligado, esperando as entradas */
 	LANE_IDLE,     /* cancela fechada, esperando carro */
 	LANE_IDENTIFY, /* pedindo a placa à câmera */
+	LANE_PAYING,   /* saída: cobrança enviada, esperando PAID */
 	LANE_OPENING,  /* abrindo até o fim de curso superior */
 	LANE_PASSAGE,  /* aberta, verde aceso, esperando o carro passar */
 	LANE_CLOSING,  /* fechando até o fim de curso inferior */
@@ -51,6 +53,14 @@ struct lane {
 
 	/* Passagem (REQ-07). */
 	bool beam_seen;
+
+	/* Pagamento, só na saída (REQ-05). */
+	struct line_parser pay_parser;
+	char uuid[UUID_BUF];         /* UUID ativo; vazio = nenhuma cobrança vale */
+	uint32_t amount;             /* valor congelado na primeira cobrança */
+	int sends;                   /* envios da cobrança atual (1..3) */
+	char charge_line[UART_FRAME_MAX + 1]; /* a mesma linha em cada reenvio */
+	size_t charge_len;
 };
 
 /** Zera a faixa. Não acessa o hardware. */

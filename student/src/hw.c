@@ -10,6 +10,7 @@
 
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/ring_buffer.h>
@@ -125,6 +126,14 @@ static int setup_uart(struct uart_chan *ch)
 	return 0;
 }
 
+/* Display ST7789V na SPI1: CS pelo driver SPI, D/C e reset por GPIO. */
+#define DISPLAY DT_ALIAS(payment_display)
+
+static const struct spi_dt_spec display_spi =
+	SPI_DT_SPEC_GET(DISPLAY, SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_OP_MODE_MASTER);
+static const struct gpio_dt_spec display_dc = GPIO_DT_SPEC_GET(DISPLAY, dc_gpios);
+static const struct gpio_dt_spec display_rst = GPIO_DT_SPEC_GET(DISPLAY, reset_gpios);
+
 /* Um callback de GPIO por entrada; guarda a faixa a que pertence. */
 struct input_cb {
 	struct gpio_callback cb;
@@ -133,9 +142,13 @@ struct input_cb {
 
 static struct input_cb input_cbs[LANE_COUNT][HW_IN_COUNT];
 
-/* Uma work por faixa: tira o tratamento do contexto de interrupção. */
+/*
+ * Uma work por faixa: tira o tratamento do contexto de interrupção. A mesma
+ * work também é agendada para o instante do prazo do motor (hw_wake_after).
+ */
 struct lane_work {
-	struct k_work work;
+	struct k_work input;            /* disparada pela EXTI */
+	struct k_work_delayable timer;  /* disparada no prazo do motor */
 	enum lane_id lane;
 };
 
@@ -143,9 +156,17 @@ static struct lane_work lane_works[LANE_COUNT];
 static hw_input_handler_t input_handler;
 
 /* Contexto de work: repassa para a lógica (que para o motor se preciso). */
-static void lane_work_fn(struct k_work *work)
+static void input_work_fn(struct k_work *work)
 {
-	struct lane_work *lw = CONTAINER_OF(work, struct lane_work, work);
+	struct lane_work *lw = CONTAINER_OF(work, struct lane_work, input);
+
+	input_handler(lw->lane);
+}
+
+static void timer_work_fn(struct k_work *work)
+{
+	struct k_work_delayable *dw = k_work_delayable_from_work(work);
+	struct lane_work *lw = CONTAINER_OF(dw, struct lane_work, timer);
 
 	input_handler(lw->lane);
 }
@@ -157,7 +178,7 @@ static void input_isr(const struct device *port, struct gpio_callback *cb, uint3
 
 	ARG_UNUSED(port);
 	ARG_UNUSED(pins);
-	(void)k_work_submit(&lane_works[icb->lane].work);
+	(void)k_work_submit(&lane_works[icb->lane].input);
 }
 
 static int setup_input(enum lane_id lane, enum hw_in in)
@@ -216,6 +237,20 @@ int hw_init(hw_input_handler_t handler)
 	}
 	k_poll_signal_init(&adc_signal);
 
+	/* Display: barramento SPI e os pinos D/C e reset (reset inativo). */
+	if (!spi_is_ready_dt(&display_spi) || !gpio_is_ready_dt(&display_dc) ||
+	    !gpio_is_ready_dt(&display_rst)) {
+		return -ENODEV;
+	}
+	rc = gpio_pin_configure_dt(&display_dc, GPIO_OUTPUT_INACTIVE);
+	if (rc != 0) {
+		return rc;
+	}
+	rc = gpio_pin_configure_dt(&display_rst, GPIO_OUTPUT_INACTIVE);
+	if (rc != 0) {
+		return rc;
+	}
+
 	/* UARTs dos equipamentos, com recepção por interrupção. */
 	for (int u = 0; u < HW_UART_COUNT; u++) {
 		rc = setup_uart(&uarts[u]);
@@ -227,7 +262,8 @@ int hw_init(hw_input_handler_t handler)
 	/* Depois as entradas e as interrupções. */
 	for (int lane = 0; lane < LANE_COUNT; lane++) {
 		lane_works[lane].lane = (enum lane_id)lane;
-		k_work_init(&lane_works[lane].work, lane_work_fn);
+		k_work_init(&lane_works[lane].input, input_work_fn);
+		k_work_init_delayable(&lane_works[lane].timer, timer_work_fn);
 		for (int in = 0; in < HW_IN_COUNT; in++) {
 			rc = setup_input((enum lane_id)lane, (enum hw_in)in);
 			if (rc != 0) {
@@ -236,6 +272,11 @@ int hw_init(hw_input_handler_t handler)
 		}
 	}
 	return 0;
+}
+
+void hw_wake_after(enum lane_id lane, int32_t ms)
+{
+	(void)k_work_reschedule(&lane_works[lane].timer, K_MSEC(ms));
 }
 
 int hw_out_set(enum lane_id lane, enum hw_out out, bool on)
@@ -289,6 +330,33 @@ int hw_uart_write(enum hw_uart uart, const char *data, size_t len)
 size_t hw_uart_read(enum hw_uart uart, uint8_t *buf, size_t max)
 {
 	return ring_buf_get(&uarts[uart].rb, buf, (uint32_t)max);
+}
+
+int hw_display_reset(bool asserted)
+{
+	return gpio_pin_set_dt(&display_rst, asserted ? 1 : 0);
+}
+
+int hw_display_write(bool data, const uint8_t *buf, size_t len)
+{
+	const struct spi_buf sb = {.buf = (void *)buf, .len = len};
+	const struct spi_buf_set set = {.buffers = &sb, .count = 1};
+	int rc = gpio_pin_set_dt(&display_dc, data ? 1 : 0);
+
+	if (rc != 0) {
+		return rc;
+	}
+	return spi_write_dt(&display_spi, &set);
+}
+
+void hw_sleep_ms(int32_t ms)
+{
+	k_msleep(ms);
+}
+
+uint32_t hw_entropy(void)
+{
+	return k_cycle_get_32();
 }
 
 int64_t hw_now_ms(void)

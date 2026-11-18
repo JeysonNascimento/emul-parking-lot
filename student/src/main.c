@@ -10,6 +10,7 @@
 
 #include "adc_sampler.h"
 #include "config.h"
+#include "display.h"
 #include "hw.h"
 #include "lane.h"
 #include "sessions.h"
@@ -42,6 +43,16 @@ int main(void)
 
 	for (int i = 0; i < LANE_COUNT; i++) {
 		lane_start(&lanes[i], hw_now_ms());
+	}
+
+	/*
+	 * Display: ~400 ms de esperas do controlador, só agora no boot, com os
+	 * motores desligados e o vermelho aceso. Se falhar, a saída pede
+	 * assistência ao tentar desenhar uma cobrança.
+	 */
+	rc = display_init();
+	if (rc != 0) {
+		printk("PARKING: falha ao iniciar o display (%d)\n", rc);
 	}
 	printk("PARKING: controlador pronto (capacidade %d)\n", CONFIG_PARKING_CAPACITY);
 

@@ -13,4 +13,8 @@ target_sources(app PRIVATE
 	../../src/line_parser.c
 	../../src/camera.c
 	../../src/sessions.c
+	../../src/tariff.c
+	../../src/payment.c
+	../../src/display.c
+	../../src/font.c
 )

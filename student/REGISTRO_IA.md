@@ -135,6 +135,29 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   Todas as suítes passam.
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-18 — Saída: tarifa, display, pagamento e prazo do motor por work
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-05, REQ-06, REQ-12, REQ-13
+- **O que pedi:** as tarefas T11 a T14 do plano.
+- **O que a IA propôs:** `src/tariff.c` (inteiros, mínimo 1 unidade, limite
+  de 9999 unidades, `BRL r.cc`); `src/payment.c` (CHARGE/CANCEL, RESULT e
+  ERROR estritos, UUID v4 por xorshift64* misturando ciclos da CPU e um
+  contador); `src/display.c` + `src/font.c` (reset por hardware, SWRESET,
+  SLPOUT, COLMOD 55, MADCTL 00, DISPON; texto por CASET/RASET/RAMWR com fonte
+  5x7 própria ampliada 2x); estado PAYING em `src/lane.c`: desenha a placa,
+  congela a tarifa, desenha valor e avisos, envia o CHARGE; reenvia a mesma
+  linha até 3 vezes a cada 1000 ms; só PAID com o UUID ativo e o mesmo valor
+  abre; desistência invalida o UUID antes do CANCEL e pede assistência.
+  Achado na medição: desenhar a tela leva ~40 ms (build de cobertura); para o
+  prazo de 2500 ms do motor não depender do laço, a mesma work de parada é
+  agendada (`k_work_delayable`) para o instante do prazo.
+- **O que aceitei, mudei ou rejeitei, e por quê:** (preencher após revisar)
+- **Como verifiquei:** os 19 cenários públicos passam; todas as suítes
+  passam; cobertura 97,8% de linhas e 88,6% de branches
+  (`firmware-coverage.py`, build/full-01).
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do

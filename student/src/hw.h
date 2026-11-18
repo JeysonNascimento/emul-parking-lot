@@ -47,6 +47,13 @@ typedef void (*hw_input_handler_t)(enum lane_id lane);
  */
 int hw_init(hw_input_handler_t handler);
 
+/**
+ * Agenda a work de entrada da faixa para daqui a ms (prazo do motor). Ela
+ * chama o mesmo handler da EXTI, que confere o prazo e para o motor sem
+ * depender do laço principal.
+ */
+void hw_wake_after(enum lane_id lane, int32_t ms);
+
 /** Escreve uma saída. @return 0 ou -errno do driver. */
 int hw_out_set(enum lane_id lane, enum hw_out out, bool on);
 
@@ -87,6 +94,22 @@ int hw_uart_write(enum hw_uart uart, const char *data, size_t len);
  * @return quantos bytes foram copiados (0 se não havia nada).
  */
 size_t hw_uart_read(enum hw_uart uart, uint8_t *buf, size_t max);
+
+/** Reset por hardware do display: true = em reset (pino em nível baixo). */
+int hw_display_reset(bool asserted);
+
+/**
+ * Uma transação SPI com o display (CS ativo durante ela).
+ * @param data false = bytes de comando (D/C baixo), true = dados (D/C alto).
+ * @return 0 ou -errno.
+ */
+int hw_display_write(bool data, const uint8_t *buf, size_t len);
+
+/** Espera bloqueante; usada só na inicialização do display, no boot. */
+void hw_sleep_ms(int32_t ms);
+
+/** Valor que muda com o tempo (ciclos da CPU), para variar os UUIDs. */
+uint32_t hw_entropy(void);
 
 /** Tempo virtual desde o boot, em ms. */
 int64_t hw_now_ms(void);

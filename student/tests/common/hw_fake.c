@@ -15,6 +15,11 @@ DEFINE_FAKE_VALUE_FUNC(int, hw_adc_start, enum lane_id);
 DEFINE_FAKE_VALUE_FUNC(int, hw_adc_poll, uint16_t *);
 DEFINE_FAKE_VALUE_FUNC(int, hw_uart_write, enum hw_uart, const char *, size_t);
 DEFINE_FAKE_VALUE_FUNC(size_t, hw_uart_read, enum hw_uart, uint8_t *, size_t);
+DEFINE_FAKE_VOID_FUNC(hw_wake_after, enum lane_id, int32_t);
+DEFINE_FAKE_VALUE_FUNC(int, hw_display_reset, bool);
+DEFINE_FAKE_VALUE_FUNC(int, hw_display_write, bool, const uint8_t *, size_t);
+DEFINE_FAKE_VOID_FUNC(hw_sleep_ms, int32_t);
+DEFINE_FAKE_VALUE_FUNC(uint32_t, hw_entropy);
 DEFINE_FAKE_VOID_FUNC(hw_sched_lock);
 DEFINE_FAKE_VOID_FUNC(hw_sched_unlock);
 
@@ -91,6 +96,11 @@ void hw_fake_reset(void)
 	RESET_FAKE(hw_adc_poll);
 	RESET_FAKE(hw_uart_write);
 	RESET_FAKE(hw_uart_read);
+	RESET_FAKE(hw_wake_after);
+	RESET_FAKE(hw_display_reset);
+	RESET_FAKE(hw_display_write);
+	RESET_FAKE(hw_sleep_ms);
+	RESET_FAKE(hw_entropy);
 	RESET_FAKE(hw_sched_lock);
 	RESET_FAKE(hw_sched_unlock);
 	FFF_RESET_HISTORY();
