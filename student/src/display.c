@@ -44,7 +44,7 @@
 /* Pixels de uma célula; estático para não pesar na pilha. */
 static uint8_t cell_buf[CELL_W * CELL_H * 2];
 
-static int command(uint8_t cmd, const uint8_t *params, size_t len)
+static int command(uint8_t cmd, uint8_t *params, size_t len)
 {
 	int rc = hw_display_write(false, &cmd, 1);
 
@@ -69,8 +69,9 @@ static int set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 
 int display_init(void)
 {
-	static const uint8_t colmod[] = {0x55}; /* RGB565 */
-	static const uint8_t madctl[] = {0x00}; /* orientação nativa */
+	/* Não são const: o driver SPI recebe ponteiros não constantes. */
+	static uint8_t colmod[] = {0x55}; /* RGB565 */
+	static uint8_t madctl[] = {0x00}; /* orientação nativa */
 	int rc;
 
 	/* Reset por hardware: 10 ms em reset, 120 ms para acordar. */

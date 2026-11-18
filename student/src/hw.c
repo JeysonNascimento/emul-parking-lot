@@ -130,7 +130,7 @@ static int setup_uart(struct uart_chan *ch)
 #define DISPLAY DT_ALIAS(payment_display)
 
 static const struct spi_dt_spec display_spi =
-	SPI_DT_SPEC_GET(DISPLAY, SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_OP_MODE_MASTER);
+	SPI_DT_SPEC_GET(DISPLAY, SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_OP_MODE_CONTROLLER);
 static const struct gpio_dt_spec display_dc = GPIO_DT_SPEC_GET(DISPLAY, dc_gpios);
 static const struct gpio_dt_spec display_rst = GPIO_DT_SPEC_GET(DISPLAY, reset_gpios);
 
@@ -337,9 +337,9 @@ int hw_display_reset(bool asserted)
 	return gpio_pin_set_dt(&display_rst, asserted ? 1 : 0);
 }
 
-int hw_display_write(bool data, const uint8_t *buf, size_t len)
+int hw_display_write(bool data, uint8_t *buf, size_t len)
 {
-	const struct spi_buf sb = {.buf = (void *)buf, .len = len};
+	const struct spi_buf sb = {.buf = buf, .len = len};
 	const struct spi_buf_set set = {.buffers = &sb, .count = 1};
 	int rc = gpio_pin_set_dt(&display_dc, data ? 1 : 0);
 

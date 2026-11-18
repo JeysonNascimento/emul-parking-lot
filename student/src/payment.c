@@ -20,7 +20,8 @@ int payment_format_charge(char *out, size_t size, const char *uuid, const char *
 		return -EINVAL;
 	}
 	n = snprintf(out, size, "P1 CHARGE %s %s %u BRL\n", uuid, plate, (unsigned int)amount);
-	if (n < 0 || (size_t)n >= size) {
+	/* n negativo (erro) vira um valor enorme no cast e também cai aqui. */
+	if ((size_t)n >= size) {
 		return -EINVAL;
 	}
 	return n;
@@ -34,7 +35,8 @@ int payment_format_cancel(char *out, size_t size, const char *uuid)
 		return -EINVAL;
 	}
 	n = snprintf(out, size, "P1 CANCEL %s\n", uuid);
-	if (n < 0 || (size_t)n >= size) {
+	/* n negativo (erro) vira um valor enorme no cast e também cai aqui. */
+	if ((size_t)n >= size) {
 		return -EINVAL;
 	}
 	return n;
@@ -64,7 +66,8 @@ static bool parse_result(const char *s, struct payment_msg *m)
 	static const char cancelled[] = "CANCELLED ";
 	uint32_t amount;
 
-	if (strlen(s) < UUID_LEN + 1 || !payment_uuid_valid(s) || s[UUID_LEN] != ' ') {
+	/* payment_uuid_valid já para no primeiro caractere fora do formato. */
+	if (!payment_uuid_valid(s) || s[UUID_LEN] != ' ') {
 		return false;
 	}
 	memcpy(m->uuid, s, UUID_LEN);

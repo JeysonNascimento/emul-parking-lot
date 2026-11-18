@@ -158,6 +158,24 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   (`firmware-coverage.py`, build/full-01).
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-18 — Análise estática e cobertura
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** qualidade (análise estática e cobertura)
+- **O que pedi:** as tarefas T15 e T16 do plano.
+- **O que a IA propôs:** correções dos 3 achados do `static-check.py`
+  (`SPI_OP_MODE_MASTER` depreciado → `SPI_OP_MODE_CONTROLLER`; cast que
+  descartava `const` no buffer SPI; `switch` sem `LANE_BOOT`/`LANE_LOCKED`);
+  checagem de `snprintf` com um teste só (`(size_t)n >= size` também pega
+  `n < 0`); nova suíte `tests/display` (sequência de inicialização, janelas e
+  cada ponto de erro da SPI) e testes de pagamento na suíte `lane` (PAID
+  exato, UUID/valor errados, 3 envios idênticos + CANCEL, CANCELLED,
+  abandono, estouro da tarifa, falha do display e da UART).
+- **O que aceitei, mudei ou rejeitei, e por quê:** (preencher após revisar)
+- **Como verifiquei:** `static-check.py`: 0 achados; `firmware-coverage.py`:
+  19/19 cenários e 6/6 suítes passam, 99,1% linhas e 94,7% branches.
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do

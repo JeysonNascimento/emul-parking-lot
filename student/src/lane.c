@@ -389,7 +389,9 @@ static void state_step(struct lane *l, int64_t now_ms)
 			l->state = LANE_IDLE;
 		}
 		break;
-	default:
+	case LANE_BOOT:
+	case LANE_LOCKED:
+		/* Tratados em lane_step antes de chegar aqui. */
 		break;
 	}
 }

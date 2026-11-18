@@ -12,7 +12,9 @@
 #include "config.h"
 #include "hw_fake.h"
 #include "lane.h"
+#include "payment.h"
 #include "sessions.h"
+#include "tariff.h"
 
 /* O amostrador do ADC é falso: a faixa só vê suas funções. */
 FAKE_VALUE_FUNC(bool, adc_sampler_failed);
@@ -33,10 +35,16 @@ static bool take_custom(enum lane_id id, uint16_t *code)
 	return true;
 }
 
+static int64_t clock_custom(void)
+{
+	return t;
+}
+
 static void before(void *fixture)
 {
 	ARG_UNUSED(fixture);
 	hw_fake_reset();
+	hw_now_ms_fake.custom_fake = clock_custom;
 	RESET_FAKE(adc_sampler_failed);
 	RESET_FAKE(adc_sampler_take);
 	adc_sampler_take_fake.custom_fake = take_custom;
@@ -525,4 +533,237 @@ ZTEST(lane, test_close_error_locks)
 	fake_out_err[LANE_ENTRY][HW_OUT_DIRECTION] = -EIO;
 	run(TICK_MS);
 	zassert_equal(lane.state, LANE_LOCKED);
+}
+
+/* ---------- pagamento na saída (REQ-05, 12) ---------- */
+
+#define PLATE "ABC1D23"
+
+static char charge[UART_FRAME_MAX + 1];
+
+/* Carro com sessão chega à saída; termina em PAYING com a cobrança enviada. */
+static void exit_until_paying(int64_t parked_ms)
+{
+	lane_init(&lane, LANE_EXIT);
+	boot();
+	zassert_ok(sessions_add(PLATE, t - parked_ms));
+	sim_dist[LANE_EXIT] = NEAR;
+	run(TICK_MS);
+	reply_plate(lane.capture_id, PLATE, 93);
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_PAYING);
+	snprintf(charge, sizeof(charge), "P1 CHARGE %s %s %u BRL\n", lane.uuid, PLATE,
+		 (unsigned int)lane.amount);
+}
+
+static void reply_payment(const char *uuid, const char *result, uint32_t amount)
+{
+	char line[96];
+
+	snprintf(line, sizeof(line), "P1 RESULT %s %s %u BRL\n", uuid, result,
+		 (unsigned int)amount);
+	fake_uart_rx(HW_UART_PAYMENT, line);
+}
+
+ZTEST(lane, test_exit_charge_is_drawn_frozen_and_sent)
+{
+	uint32_t expected;
+
+	exit_until_paying(2500);
+	zassert_ok(tariff_compute(2500 + TICK_MS, CONFIG_PARKING_TARIFF_UNIT_MS, &expected));
+	zassert_equal(lane.amount, expected);
+	zassert_true(payment_uuid_valid(lane.uuid));
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], charge);
+	zassert_true(hw_display_write_fake.call_count > 0, "tela desenhada pela SPI");
+	zassert_equal(fake_out_on_count[LANE_EXIT][HW_OUT_ENABLE], 0, "não abre antes");
+	zassert_true(fake_out[LANE_EXIT][HW_OUT_RED]);
+}
+
+ZTEST(lane, test_exact_paid_opens)
+{
+	exit_until_paying(1000);
+	reply_payment(lane.uuid, "PAID", lane.amount);
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_OPENING);
+	zassert_equal(lane.uuid[0], '\0', "cobrança encerrada");
+}
+
+ZTEST(lane, test_wrong_paid_never_opens)
+{
+	char other[UUID_BUF];
+
+	exit_until_paying(1000);
+	payment_new_uuid(other, 1);
+	reply_payment(other, "PAID", lane.amount);         /* UUID antigo/outro */
+	reply_payment(lane.uuid, "PAID", lane.amount + 100); /* outro valor */
+	fake_uart_rx(HW_UART_PAYMENT, "P1 ERROR TIMEOUT\n");
+	fake_uart_rx(HW_UART_PAYMENT, "P1 RESULT broken\n");
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_PAYING);
+	zassert_equal(fake_out_on_count[LANE_EXIT][HW_OUT_ENABLE], 0);
+}
+
+ZTEST(lane, test_retries_resend_the_same_line_then_cancel)
+{
+	char expected[3 * sizeof(charge) + 64];
+	char cancel[64];
+
+	exit_until_paying(1000);
+	run(PAYMENT_TIMEOUT_MS);
+	run(PAYMENT_TIMEOUT_MS);
+	snprintf(expected, sizeof(expected), "%s%s%s", charge, charge, charge);
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], expected, "3 envios idênticos");
+	zassert_equal(lane.state, LANE_PAYING);
+
+	snprintf(cancel, sizeof(cancel), "P1 CANCEL %s\n", lane.uuid);
+	run(PAYMENT_TIMEOUT_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	strcat(expected, cancel);
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], expected);
+	zassert_equal(fake_out_on_count[LANE_EXIT][HW_OUT_BUZZER], 1);
+}
+
+ZTEST(lane, test_late_paid_after_cancel_does_not_open)
+{
+	char old[UUID_BUF];
+
+	exit_until_paying(1000);
+	memcpy(old, lane.uuid, sizeof(old));
+	run(3 * PAYMENT_TIMEOUT_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	reply_payment(old, "PAID", lane.amount);
+	run(100);
+	zassert_equal(fake_out_on_count[LANE_EXIT][HW_OUT_ENABLE], 0);
+}
+
+ZTEST(lane, test_cancelled_requests_assistance)
+{
+	exit_until_paying(1000);
+	reply_payment(lane.uuid, "CANCELLED", lane.amount);
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	zassert_equal(fake_out_on_count[LANE_EXIT][HW_OUT_ENABLE], 0);
+}
+
+ZTEST(lane, test_departure_during_payment_cancels)
+{
+	exit_until_paying(1000);
+	sim_dist[LANE_EXIT] = FAR;
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	zassert_not_null(strstr(fake_uart_tx[HW_UART_PAYMENT], "P1 CANCEL "));
+}
+
+ZTEST(lane, test_waits_without_fresh_distance)
+{
+	exit_until_paying(1000);
+	adc_sampler_take_fake.custom_fake = NULL;
+	run(500);
+	zassert_equal(lane.state, LANE_PAYING);
+}
+
+ZTEST(lane, test_paid_exit_passage_removes_session)
+{
+	exit_until_paying(1000);
+	reply_payment(lane.uuid, "PAID", lane.amount);
+	run(TICK_MS);
+	arm_at_top();
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_PASSAGE);
+	zassert_equal(sessions_count(), 1, "pagar não encerra a sessão");
+	fake_in[LANE_EXIT][HW_IN_BEAM] = 1;
+	run(100);
+	fake_in[LANE_EXIT][HW_IN_BEAM] = 0;
+	sim_dist[LANE_EXIT] = FAR;
+	run(TICK_MS);
+	zassert_equal(sessions_count(), 0);
+	zassert_equal(lane.state, LANE_CLOSING);
+
+	/* Um PAID repetido depois não reabre nada. */
+	arm_at_bottom();
+	run(TICK_MS);
+	reply_payment(lane.uuid, "PAID", lane.amount);
+	run(100);
+	zassert_equal(lane.state, LANE_IDLE);
+}
+
+ZTEST(lane, test_tariff_overflow_requests_assistance)
+{
+	int64_t too_long = ((int64_t)TARIFF_MAX_UNITS + 1) * CONFIG_PARKING_TARIFF_UNIT_MS;
+
+	lane_init(&lane, LANE_EXIT);
+	boot();
+	t = too_long + 1000;
+	zassert_ok(sessions_add(PLATE, 0));
+	sim_dist[LANE_EXIT] = NEAR;
+	run(TICK_MS);
+	reply_plate(lane.capture_id, PLATE, 93);
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], "", "não cobra");
+}
+
+/* Falha na n-ésima escrita SPI (0 = nunca). */
+static unsigned int spi_writes;
+static unsigned int spi_fail_at;
+
+static int spi_custom(bool data, uint8_t *buf, size_t len)
+{
+	ARG_UNUSED(data);
+	ARG_UNUSED(buf);
+	ARG_UNUSED(len);
+	spi_writes++;
+	return spi_writes == spi_fail_at ? -EIO : 0;
+}
+
+static void exit_with_spi_failure(unsigned int fail_at)
+{
+	lane_init(&lane, LANE_EXIT);
+	boot();
+	spi_writes = 0;
+	spi_fail_at = fail_at;
+	hw_display_write_fake.custom_fake = spi_custom;
+	zassert_ok(sessions_add(PLATE, 0));
+	sim_dist[LANE_EXIT] = NEAR;
+	run(TICK_MS);
+	reply_plate(lane.capture_id, PLATE, 93);
+	run(TICK_MS);
+}
+
+ZTEST(lane, test_display_failure_requests_assistance)
+{
+	exit_with_spi_failure(1); /* falha ao desenhar a placa */
+	zassert_equal(lane.state, LANE_ASSIST);
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], "");
+
+	before(NULL);
+	exit_with_spi_failure(7 * 6 + 1); /* falha ao desenhar o valor */
+	zassert_equal(lane.state, LANE_ASSIST);
+	zassert_str_equal(fake_uart_tx[HW_UART_PAYMENT], "", "sem tela, sem cobrança");
+}
+
+ZTEST(lane, test_charge_write_error_locks)
+{
+	lane_init(&lane, LANE_EXIT);
+	boot();
+	zassert_ok(sessions_add(PLATE, 0));
+	sim_dist[LANE_EXIT] = NEAR;
+	run(TICK_MS);
+	reply_plate(lane.capture_id, PLATE, 93);
+	hw_uart_write_fake.return_val = -EIO;
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_LOCKED);
+}
+
+ZTEST(lane, test_second_assist_does_not_pulse_again)
+{
+	boot();
+	sim_dist[LANE_ENTRY] = NEAR;
+	run(TICK_MS);
+	run(3 * CAMERA_TIMEOUT_MS + TICK_MS);
+	zassert_equal(lane.state, LANE_ASSIST);
+	adc_sampler_failed_fake.return_val = true;
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_LOCKED);
+	zassert_equal(fake_out_on_count[LANE_ENTRY][HW_OUT_BUZZER], 1);
 }

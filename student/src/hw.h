@@ -103,7 +103,7 @@ int hw_display_reset(bool asserted);
  * @param data false = bytes de comando (D/C baixo), true = dados (D/C alto).
  * @return 0 ou -errno.
  */
-int hw_display_write(bool data, const uint8_t *buf, size_t len);
+int hw_display_write(bool data, uint8_t *buf, size_t len);
 
 /** Espera bloqueante; usada só na inicialização do display, no boot. */
 void hw_sleep_ms(int32_t ms);

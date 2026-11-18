@@ -35,7 +35,8 @@ int tariff_format_brl(char *out, size_t size, uint32_t centavos)
 	int n = snprintf(out, size, "BRL %u.%02u", (unsigned int)(centavos / 100U),
 			 (unsigned int)(centavos % 100U));
 
-	if (n < 0 || (size_t)n >= size) {
+	/* n negativo (erro) vira um valor enorme no cast e também cai aqui. */
+	if ((size_t)n >= size) {
 		return -EINVAL;
 	}
 	return n;

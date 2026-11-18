@@ -272,3 +272,57 @@ ZTEST(barrier, test_fault_is_sticky)
 	zassert_equal(barrier_open(&b, 100), -EPERM);
 	zassert_equal(b.fault, BARRIER_FAULT_DEADLINE);
 }
+
+ZTEST(barrier, test_start_fully_open_is_not_closed)
+{
+	fake_in[L][HW_IN_LOWER] = 0;
+	fake_in[L][HW_IN_UPPER] = 1;
+	zassert_equal(barrier_start(&b), BARRIER_FAULT);
+	zassert_equal(b.fault, BARRIER_FAULT_NOT_CLOSED);
+}
+
+ZTEST(barrier, test_upper_or_lower_read_error_stops_motor)
+{
+	zassert_ok(barrier_open(&b, 0));
+	fake_in[L][HW_IN_UPPER] = -EIO;
+	barrier_safety(&b);
+	zassert_false(fake_out[L][HW_OUT_ENABLE]);
+	zassert_equal(barrier_step(&b, 10), BARRIER_FAULT);
+	zassert_equal(b.fault, BARRIER_FAULT_IO);
+
+	barrier_init(&b, L);
+	fake_in[L][HW_IN_UPPER] = 0;
+	zassert_ok(barrier_open(&b, 0));
+	fake_in[L][HW_IN_LOWER] = -EIO;
+	barrier_safety(&b);
+	zassert_equal(barrier_step(&b, 10), BARRIER_FAULT);
+	zassert_equal(b.fault, BARRIER_FAULT_IO);
+}
+
+/* O relógio da work (hw_now_ms) passou do prazo: ela mesma para o motor. */
+static int64_t fake_clock;
+
+static int64_t clock_custom(void)
+{
+	return fake_clock;
+}
+
+ZTEST(barrier, test_deadline_enforced_by_work_without_the_loop)
+{
+	hw_now_ms_fake.custom_fake = clock_custom;
+	fake_clock = 100;
+	zassert_ok(barrier_open(&b, 100));
+	zassert_equal(hw_wake_after_fake.call_count, 1, "work agendada para o prazo");
+	zassert_equal(hw_wake_after_fake.arg1_val, MOTOR_DEADLINE_MS);
+	fake_in[L][HW_IN_LOWER] = 0;
+
+	fake_clock = 100 + MOTOR_DEADLINE_MS - 1;
+	barrier_safety(&b);
+	zassert_true(fake_out[L][HW_OUT_ENABLE]);
+	fake_clock = 100 + MOTOR_DEADLINE_MS;
+	barrier_safety(&b); /* a work agendada roda no instante do prazo */
+	zassert_false(fake_out[L][HW_OUT_ENABLE]);
+	/* O laço, mesmo atrasado, só registra a falha. */
+	zassert_equal(barrier_step(&b, 100 + MOTOR_DEADLINE_MS - 50), BARRIER_FAULT);
+	zassert_equal(b.fault, BARRIER_FAULT_DEADLINE);
+}

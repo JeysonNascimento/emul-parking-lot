@@ -18,7 +18,8 @@ int camera_format_capture(char *out, size_t size, uint32_t id)
 		return -EINVAL;
 	}
 	n = snprintf(out, size, "AT+CAPTURE=%u\r\n", (unsigned int)id);
-	if (n < 0 || (size_t)n >= size) {
+	/* n negativo (erro) vira um valor enorme no cast e também cai aqui. */
+	if ((size_t)n >= size) {
 		return -EINVAL;
 	}
 	return n;

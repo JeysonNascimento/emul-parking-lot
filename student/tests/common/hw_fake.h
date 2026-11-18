@@ -22,7 +22,7 @@ DECLARE_FAKE_VALUE_FUNC(int, hw_uart_write, enum hw_uart, const char *, size_t);
 DECLARE_FAKE_VALUE_FUNC(size_t, hw_uart_read, enum hw_uart, uint8_t *, size_t);
 DECLARE_FAKE_VOID_FUNC(hw_wake_after, enum lane_id, int32_t);
 DECLARE_FAKE_VALUE_FUNC(int, hw_display_reset, bool);
-DECLARE_FAKE_VALUE_FUNC(int, hw_display_write, bool, const uint8_t *, size_t);
+DECLARE_FAKE_VALUE_FUNC(int, hw_display_write, bool, uint8_t *, size_t);
 DECLARE_FAKE_VOID_FUNC(hw_sleep_ms, int32_t);
 DECLARE_FAKE_VALUE_FUNC(uint32_t, hw_entropy);
 DECLARE_FAKE_VOID_FUNC(hw_sched_lock);

@@ -85,6 +85,7 @@ ZTEST(parser, test_empty_lines_are_rejected)
 {
 	lp_init(&p, true);
 	zassert_equal(feed("\r\n", 0), LP_DROPPED);
+	zassert_equal(feed("\n", 0), LP_DROPPED, "LF sozinho no modo CRLF");
 	lp_init(&p, false);
 	zassert_equal(feed("\n", 0), LP_DROPPED);
 }
