@@ -12,6 +12,7 @@
 #include "config.h"
 #include "hw.h"
 #include "lane.h"
+#include "sessions.h"
 
 static struct lane lanes[LANE_COUNT];
 
@@ -31,6 +32,7 @@ int main(void)
 	}
 
 	adc_sampler_init();
+	sessions_clear();
 
 	rc = hw_init(on_input);
 	if (rc != 0) {

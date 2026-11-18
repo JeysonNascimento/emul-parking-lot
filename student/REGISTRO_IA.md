@@ -111,6 +111,30 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   de bytes foi corrigido: `AT+CAPTURE=999999999\r\n` tem 22 bytes).
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-18 — UART por interrupção e ciclo completo da entrada
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-02, 03, 04, 06, 07, 08, 09, 11
+- **O que pedi:** as tarefas T6, T8 (UART) e T10 do plano.
+- **O que a IA propôs:** recepção por interrupção em `src/hw.c` (ISR esvazia
+  a FIFO num `ring_buf` por UART, um produtor e um consumidor, sem trava) e
+  transmissão por `uart_poll_out`; `src/lane.c` com os estados IDLE,
+  IDENTIFY, OPENING, PASSAGE, CLOSING, ASSIST e LOCKED: 3 tentativas com ID
+  novo e 1000 ms, histerese 683/1024 com a flag `armed`, abandono ao se
+  afastar, decisão por sessões, verde só com a cancela aberta e o motor
+  parado, passagem por feixe ativo→inativo e distância > 1024, sessão criada
+  só na passagem, fechamento com verde apagado, rearme da assistência com o
+  carro longe e o feixe livre. Suíte `tests/lane` reescrita (falsos de UART
+  com injeção de bytes).
+- **O que aceitei, mudei ou rejeitei, e por quê:** (preencher após revisar)
+- **Como verifiquei:** passam `confidence-retry`, `low-confidence`,
+  `camera-timeout`, `stationary`, `noisy-threshold`, `jam`, `missing-upper`,
+  `missing-lower`, `obstruction-before-close`, `obstruction-during-close`,
+  `partial-startup` e `contradictory-limits` (os 4 do portão G3 incluídos).
+  `normal` falha na saída (pagamento ainda não implementado), como esperado.
+  Todas as suítes passam.
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do

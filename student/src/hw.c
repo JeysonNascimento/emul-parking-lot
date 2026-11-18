@@ -10,7 +10,9 @@
 
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/ring_buffer.h>
 
 /* Saídas, indexadas por [faixa][enum hw_out]. */
 static const struct gpio_dt_spec outputs[LANE_COUNT][HW_OUT_COUNT] = {
@@ -68,6 +70,60 @@ static const uint8_t adc_resolution[LANE_COUNT] = {
 static uint16_t adc_buffer;
 static struct adc_sequence adc_seq;
 static struct k_poll_signal adc_signal;
+
+/*
+ * UARTs: a interrupção de recepção copia os bytes para um ring buffer por
+ * UART; o laço principal os retira com hw_uart_read(). Um produtor (ISR) e
+ * um consumidor (laço) por buffer: o ring_buf do Zephyr dispensa trava
+ * nesse caso. Se o buffer encher, os bytes excedentes se perdem e o quadro
+ * corrompido é descartado pelo montador de linhas.
+ */
+#define UART_RX_BUF 256
+
+struct uart_chan {
+	const struct device *dev;
+	struct ring_buf rb;
+	uint8_t storage[UART_RX_BUF];
+};
+
+static struct uart_chan uarts[HW_UART_COUNT] = {
+	[HW_UART_CAMERA_ENTRY] = {.dev = DEVICE_DT_GET(DT_ALIAS(entry_camera))},
+	[HW_UART_CAMERA_EXIT] = {.dev = DEVICE_DT_GET(DT_ALIAS(exit_camera))},
+	[HW_UART_PAYMENT] = {.dev = DEVICE_DT_GET(DT_ALIAS(payment_terminal))},
+};
+
+/* Contexto de interrupção: esvazia a FIFO de recepção no ring buffer. */
+static void uart_isr(const struct device *dev, void *user_data)
+{
+	struct uart_chan *ch = user_data;
+	uint8_t chunk[16];
+
+	uart_irq_update(dev);
+	while (uart_irq_rx_ready(dev) > 0) {
+		int n = uart_fifo_read(dev, chunk, sizeof(chunk));
+
+		if (n <= 0) {
+			break;
+		}
+		(void)ring_buf_put(&ch->rb, chunk, (uint32_t)n);
+	}
+}
+
+static int setup_uart(struct uart_chan *ch)
+{
+	int rc;
+
+	if (!device_is_ready(ch->dev)) {
+		return -ENODEV;
+	}
+	ring_buf_init(&ch->rb, sizeof(ch->storage), ch->storage);
+	rc = uart_irq_callback_user_data_set(ch->dev, uart_isr, ch);
+	if (rc != 0) {
+		return rc;
+	}
+	uart_irq_rx_enable(ch->dev);
+	return 0;
+}
 
 /* Um callback de GPIO por entrada; guarda a faixa a que pertence. */
 struct input_cb {
@@ -160,6 +216,14 @@ int hw_init(hw_input_handler_t handler)
 	}
 	k_poll_signal_init(&adc_signal);
 
+	/* UARTs dos equipamentos, com recepção por interrupção. */
+	for (int u = 0; u < HW_UART_COUNT; u++) {
+		rc = setup_uart(&uarts[u]);
+		if (rc != 0) {
+			return rc;
+		}
+	}
+
 	/* Depois as entradas e as interrupções. */
 	for (int lane = 0; lane < LANE_COUNT; lane++) {
 		lane_works[lane].lane = (enum lane_id)lane;
@@ -210,6 +274,21 @@ int hw_adc_poll(uint16_t *raw)
 	}
 	*raw = adc_buffer;
 	return 0;
+}
+
+int hw_uart_write(enum hw_uart uart, const char *data, size_t len)
+{
+	const struct device *dev = uarts[uart].dev;
+
+	for (size_t i = 0; i < len; i++) {
+		uart_poll_out(dev, (unsigned char)data[i]);
+	}
+	return 0;
+}
+
+size_t hw_uart_read(enum hw_uart uart, uint8_t *buf, size_t max)
+{
+	return ring_buf_get(&uarts[uart].rb, buf, (uint32_t)max);
 }
 
 int64_t hw_now_ms(void)

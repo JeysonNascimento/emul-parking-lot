@@ -7,6 +7,7 @@
 #define PARKING_HW_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /** Faixas do estacionamento. Servem de índice nos vetores. */
@@ -66,6 +67,26 @@ int hw_adc_start(enum lane_id lane);
  *         ou o erro (-errno) informado pelo driver na conclusão.
  */
 int hw_adc_poll(uint16_t *raw);
+
+/** UARTs dos equipamentos. */
+enum hw_uart {
+	HW_UART_CAMERA_ENTRY = 0, /* USART3 */
+	HW_UART_CAMERA_EXIT,      /* USART2 */
+	HW_UART_PAYMENT,          /* LPUART1 */
+	HW_UART_COUNT
+};
+
+/**
+ * Envia bytes (por polling: quadros curtos, no máximo 128 bytes).
+ * @return 0 ou -errno.
+ */
+int hw_uart_write(enum hw_uart uart, const char *data, size_t len);
+
+/**
+ * Retira até max bytes já recebidos pela interrupção. Não bloqueia.
+ * @return quantos bytes foram copiados (0 se não havia nada).
+ */
+size_t hw_uart_read(enum hw_uart uart, uint8_t *buf, size_t max);
 
 /** Tempo virtual desde o boot, em ms. */
 int64_t hw_now_ms(void);

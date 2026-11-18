@@ -18,6 +18,8 @@ DECLARE_FAKE_VALUE_FUNC(int, hw_in_get, enum lane_id, enum hw_in);
 DECLARE_FAKE_VALUE_FUNC(int64_t, hw_now_ms);
 DECLARE_FAKE_VALUE_FUNC(int, hw_adc_start, enum lane_id);
 DECLARE_FAKE_VALUE_FUNC(int, hw_adc_poll, uint16_t *);
+DECLARE_FAKE_VALUE_FUNC(int, hw_uart_write, enum hw_uart, const char *, size_t);
+DECLARE_FAKE_VALUE_FUNC(size_t, hw_uart_read, enum hw_uart, uint8_t *, size_t);
 DECLARE_FAKE_VOID_FUNC(hw_sched_lock);
 DECLARE_FAKE_VOID_FUNC(hw_sched_unlock);
 
@@ -29,6 +31,11 @@ extern bool fake_out[LANE_COUNT][HW_OUT_COUNT];
 extern int fake_out_err[LANE_COUNT][HW_OUT_COUNT];
 /* Quantas vezes cada saída foi escrita com 1. */
 extern int fake_out_on_count[LANE_COUNT][HW_OUT_COUNT];
+
+/* Bytes "recebidos" que hw_uart_read entrega, por UART. */
+void fake_uart_rx(enum hw_uart uart, const char *data);
+/* Tudo o que foi escrito em cada UART desde o reset (texto). */
+extern char fake_uart_tx[HW_UART_COUNT][512];
 
 /** Zera os falsos e deixa as duas cancelas fechadas (inferior = 1). */
 void hw_fake_reset(void);

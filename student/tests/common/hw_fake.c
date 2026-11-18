@@ -3,6 +3,8 @@
 
 #include <string.h>
 
+#include <zephyr/sys/util.h>
+
 DEFINE_FFF_GLOBALS;
 
 DEFINE_FAKE_VALUE_FUNC(int, hw_init, hw_input_handler_t);
@@ -11,6 +13,8 @@ DEFINE_FAKE_VALUE_FUNC(int, hw_in_get, enum lane_id, enum hw_in);
 DEFINE_FAKE_VALUE_FUNC(int64_t, hw_now_ms);
 DEFINE_FAKE_VALUE_FUNC(int, hw_adc_start, enum lane_id);
 DEFINE_FAKE_VALUE_FUNC(int, hw_adc_poll, uint16_t *);
+DEFINE_FAKE_VALUE_FUNC(int, hw_uart_write, enum hw_uart, const char *, size_t);
+DEFINE_FAKE_VALUE_FUNC(size_t, hw_uart_read, enum hw_uart, uint8_t *, size_t);
 DEFINE_FAKE_VOID_FUNC(hw_sched_lock);
 DEFINE_FAKE_VOID_FUNC(hw_sched_unlock);
 
@@ -32,6 +36,46 @@ static int out_set_custom(enum lane_id lane, enum hw_out out, bool on)
 	return 0;
 }
 
+char fake_uart_tx[HW_UART_COUNT][512];
+static char rx_data[HW_UART_COUNT][512];
+static size_t rx_len[HW_UART_COUNT];
+static size_t rx_pos[HW_UART_COUNT];
+
+void fake_uart_rx(enum hw_uart uart, const char *data)
+{
+	size_t n = strlen(data);
+
+	/* Compacta o que já foi lido e acrescenta os novos bytes. */
+	memmove(rx_data[uart], rx_data[uart] + rx_pos[uart], rx_len[uart] - rx_pos[uart]);
+	rx_len[uart] -= rx_pos[uart];
+	rx_pos[uart] = 0;
+	memcpy(rx_data[uart] + rx_len[uart], data, n);
+	rx_len[uart] += n;
+}
+
+static size_t uart_read_custom(enum hw_uart uart, uint8_t *buf, size_t max)
+{
+	size_t n = MIN(max, rx_len[uart] - rx_pos[uart]);
+
+	memcpy(buf, rx_data[uart] + rx_pos[uart], n);
+	rx_pos[uart] += n;
+	return n;
+}
+
+static int uart_write_custom(enum hw_uart uart, const char *data, size_t len)
+{
+	size_t used = strlen(fake_uart_tx[uart]);
+
+	if (hw_uart_write_fake.return_val != 0) {
+		return hw_uart_write_fake.return_val;
+	}
+	if (used + len < sizeof(fake_uart_tx[uart])) {
+		memcpy(fake_uart_tx[uart] + used, data, len);
+		fake_uart_tx[uart][used + len] = '\0';
+	}
+	return 0;
+}
+
 static int in_get_custom(enum lane_id lane, enum hw_in in)
 {
 	return fake_in[lane][in];
@@ -45,6 +89,8 @@ void hw_fake_reset(void)
 	RESET_FAKE(hw_now_ms);
 	RESET_FAKE(hw_adc_start);
 	RESET_FAKE(hw_adc_poll);
+	RESET_FAKE(hw_uart_write);
+	RESET_FAKE(hw_uart_read);
 	RESET_FAKE(hw_sched_lock);
 	RESET_FAKE(hw_sched_unlock);
 	FFF_RESET_HISTORY();
@@ -56,6 +102,11 @@ void hw_fake_reset(void)
 	for (int lane = 0; lane < LANE_COUNT; lane++) {
 		fake_in[lane][HW_IN_LOWER] = 1;
 	}
+	memset(fake_uart_tx, 0, sizeof(fake_uart_tx));
+	memset(rx_len, 0, sizeof(rx_len));
+	memset(rx_pos, 0, sizeof(rx_pos));
+	hw_uart_write_fake.custom_fake = uart_write_custom;
+	hw_uart_read_fake.custom_fake = uart_read_custom;
 	hw_out_set_fake.custom_fake = out_set_custom;
 	hw_in_get_fake.custom_fake = in_get_custom;
 }

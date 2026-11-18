@@ -10,4 +10,7 @@ target_sources(app PRIVATE
 	../common/hw_fake.c
 	../../src/barrier.c
 	../../src/lane.c
+	../../src/line_parser.c
+	../../src/camera.c
+	../../src/sessions.c
 )

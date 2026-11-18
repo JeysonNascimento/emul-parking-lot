@@ -1,6 +1,9 @@
 /*
  * Máquina de estados de uma faixa. As duas faixas usam o mesmo código;
  * cada uma tem a sua struct lane.
+ *
+ *   BOOT → IDLE → IDENTIFY → [saída: PAYING] → OPENING → PASSAGE → CLOSING → IDLE
+ *   qualquer anomalia → ASSIST (rearmável) ou LOCKED (só o reset tira)
  */
 #ifndef PARKING_LANE_H
 #define PARKING_LANE_H
@@ -9,11 +12,17 @@
 #include <stdint.h>
 
 #include "barrier.h"
+#include "camera.h"
 #include "hw.h"
+#include "line_parser.h"
 
 enum lane_state {
 	LANE_BOOT = 0, /* partida: motor desligado, esperando as entradas */
 	LANE_IDLE,     /* cancela fechada, esperando carro */
+	LANE_IDENTIFY, /* pedindo a placa à câmera */
+	LANE_OPENING,  /* abrindo até o fim de curso superior */
+	LANE_PASSAGE,  /* aberta, verde aceso, esperando o carro passar */
+	LANE_CLOSING,  /* fechando até o fim de curso inferior */
 	LANE_ASSIST,   /* assistência rearmável (cancela fechada) */
 	LANE_LOCKED,   /* assistência travada até o reset */
 };
@@ -22,8 +31,26 @@ struct lane {
 	enum lane_id id;
 	enum lane_state state;
 	struct barrier barrier;
+
+	/* Buzzer (REQ-09). */
 	bool buzzer_on;
-	int64_t buzzer_off_ms; /* quando desligar o pulso do buzzer */
+	int64_t buzzer_off_ms;
+
+	/* Distância (REQ-03). */
+	uint16_t dist;    /* último código fresco do ADC */
+	bool dist_fresh;  /* chegou amostra nova neste passo */
+	bool armed;       /* pode disparar captura (o carro anterior saiu) */
+
+	/* Câmera (REQ-02). */
+	struct line_parser cam_parser;
+	uint32_t next_capture_id; /* contador da faixa; nunca repete no boot */
+	uint32_t capture_id;      /* ID esperado; 0 = nenhum pedido válido */
+	int attempt;              /* 1..CAMERA_MAX_ATTEMPTS */
+	int64_t deadline_ms;      /* prazo da tentativa ou da passagem */
+	char plate[PLATE_BUF];    /* placa aceita no ciclo atual */
+
+	/* Passagem (REQ-07). */
+	bool beam_seen;
 };
 
 /** Zera a faixa. Não acessa o hardware. */

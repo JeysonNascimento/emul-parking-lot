@@ -10,4 +10,7 @@ target_sources(app PRIVATE
 	src/barrier.c
 	src/lane.c
 	src/adc_sampler.c
+	src/line_parser.c
+	src/camera.c
+	src/sessions.c
 )
