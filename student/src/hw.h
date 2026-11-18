@@ -52,6 +52,21 @@ int hw_out_set(enum lane_id lane, enum hw_out out, bool on);
 /** Lê uma entrada. @return 0, 1 ou -errno do driver. */
 int hw_in_get(enum lane_id lane, enum hw_in in);
 
+/**
+ * Dispara uma conversão assíncrona do ADC4 no canal da faixa.
+ * Buffer, sequência e sinal são estáticos em hw.c: sobrevivem a uma
+ * conclusão atrasada. Só chame com nenhuma conversão pendente.
+ * @return 0 ou -errno de adc_read_async.
+ */
+int hw_adc_start(enum lane_id lane);
+
+/**
+ * Confere, sem bloquear, a conversão pendente.
+ * @return 0 com *raw preenchido, -EINPROGRESS se ainda não terminou,
+ *         ou o erro (-errno) informado pelo driver na conclusão.
+ */
+int hw_adc_poll(uint16_t *raw);
+
 /** Tempo virtual desde o boot, em ms. */
 int64_t hw_now_ms(void);
 

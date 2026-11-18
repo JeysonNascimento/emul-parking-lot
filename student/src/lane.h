@@ -12,7 +12,8 @@
 #include "hw.h"
 
 enum lane_state {
-	LANE_IDLE = 0, /* cancela fechada, esperando carro */
+	LANE_BOOT = 0, /* partida: motor desligado, esperando as entradas */
+	LANE_IDLE,     /* cancela fechada, esperando carro */
 	LANE_ASSIST,   /* assistência rearmável (cancela fechada) */
 	LANE_LOCKED,   /* assistência travada até o reset */
 };
@@ -28,7 +29,10 @@ struct lane {
 /** Zera a faixa. Não acessa o hardware. */
 void lane_init(struct lane *l, enum lane_id id);
 
-/** Partida segura (REQ-01): sinais e conferência dos fins de curso. */
+/**
+ * Partida segura (REQ-01): acende o vermelho. Os fins de curso são
+ * conferidos no primeiro passo depois de STARTUP_SETTLE_MS.
+ */
 void lane_start(struct lane *l, int64_t now_ms);
 
 /** Um passo do laço principal (a cada TICK_MS). */

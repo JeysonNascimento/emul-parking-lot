@@ -16,6 +16,8 @@ DECLARE_FAKE_VALUE_FUNC(int, hw_init, hw_input_handler_t);
 DECLARE_FAKE_VALUE_FUNC(int, hw_out_set, enum lane_id, enum hw_out, bool);
 DECLARE_FAKE_VALUE_FUNC(int, hw_in_get, enum lane_id, enum hw_in);
 DECLARE_FAKE_VALUE_FUNC(int64_t, hw_now_ms);
+DECLARE_FAKE_VALUE_FUNC(int, hw_adc_start, enum lane_id);
+DECLARE_FAKE_VALUE_FUNC(int, hw_adc_poll, uint16_t *);
 DECLARE_FAKE_VOID_FUNC(hw_sched_lock);
 DECLARE_FAKE_VOID_FUNC(hw_sched_unlock);
 

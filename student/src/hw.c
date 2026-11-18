@@ -8,6 +8,7 @@
 
 #include <errno.h>
 
+#include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 
@@ -42,6 +43,31 @@ static const struct gpio_dt_spec inputs[LANE_COUNT][HW_IN_COUNT] = {
 		[HW_IN_BEAM] = GPIO_DT_SPEC_GET(DT_ALIAS(exit_beam), gpios),
 	},
 };
+
+/* ADC4: um conversor para os dois sensores de distância. */
+#define DIST_ENTRY DT_ALIAS(entry_distance)
+#define DIST_EXIT DT_ALIAS(exit_distance)
+
+static const struct device *const adc_dev = DEVICE_DT_GET(DT_PARENT(DIST_ENTRY));
+
+static const struct adc_channel_cfg adc_cfgs[LANE_COUNT] = {
+	[LANE_ENTRY] = ADC_CHANNEL_CFG_DT(DIST_ENTRY),
+	[LANE_EXIT] = ADC_CHANNEL_CFG_DT(DIST_EXIT),
+};
+
+static const uint8_t adc_resolution[LANE_COUNT] = {
+	[LANE_ENTRY] = DT_PROP(DIST_ENTRY, zephyr_resolution),
+	[LANE_EXIT] = DT_PROP(DIST_EXIT, zephyr_resolution),
+};
+
+/*
+ * REQ-10: estáticos de propósito. O driver escreve no buffer e sinaliza
+ * quando termina, mesmo que seja tarde; por isso nada disto pode estar na
+ * pilha de uma função.
+ */
+static uint16_t adc_buffer;
+static struct adc_sequence adc_seq;
+static struct k_poll_signal adc_signal;
 
 /* Um callback de GPIO por entrada; guarda a faixa a que pertence. */
 struct input_cb {
@@ -122,6 +148,18 @@ int hw_init(hw_input_handler_t handler)
 		}
 	}
 
+	/* ADC4 e os dois canais de distância. */
+	if (!device_is_ready(adc_dev)) {
+		return -ENODEV;
+	}
+	for (int lane = 0; lane < LANE_COUNT; lane++) {
+		rc = adc_channel_setup(adc_dev, &adc_cfgs[lane]);
+		if (rc != 0) {
+			return rc;
+		}
+	}
+	k_poll_signal_init(&adc_signal);
+
 	/* Depois as entradas e as interrupções. */
 	for (int lane = 0; lane < LANE_COUNT; lane++) {
 		lane_works[lane].lane = (enum lane_id)lane;
@@ -144,6 +182,34 @@ int hw_out_set(enum lane_id lane, enum hw_out out, bool on)
 int hw_in_get(enum lane_id lane, enum hw_in in)
 {
 	return gpio_pin_get_dt(&inputs[lane][in]);
+}
+
+int hw_adc_start(enum lane_id lane)
+{
+	adc_seq = (struct adc_sequence){
+		.channels = BIT(adc_cfgs[lane].channel_id),
+		.buffer = &adc_buffer,
+		.buffer_size = sizeof(adc_buffer),
+		.resolution = adc_resolution[lane],
+	};
+	k_poll_signal_reset(&adc_signal);
+	return adc_read_async(adc_dev, &adc_seq, &adc_signal);
+}
+
+int hw_adc_poll(uint16_t *raw)
+{
+	unsigned int signaled;
+	int result;
+
+	k_poll_signal_check(&adc_signal, &signaled, &result);
+	if (signaled == 0U) {
+		return -EINPROGRESS;
+	}
+	if (result != 0) {
+		return result;
+	}
+	*raw = adc_buffer;
+	return 0;
 }
 
 int64_t hw_now_ms(void)

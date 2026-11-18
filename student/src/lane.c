@@ -4,12 +4,15 @@
  */
 #include "lane.h"
 
+#include <zephyr/sys/util.h>
+
+#include "adc_sampler.h"
 #include "config.h"
 
 void lane_init(struct lane *l, enum lane_id id)
 {
 	l->id = id;
-	l->state = LANE_IDLE;
+	l->state = LANE_BOOT;
 	l->buzzer_on = false;
 	l->buzzer_off_ms = 0;
 	barrier_init(&l->barrier, id);
@@ -45,8 +48,19 @@ static void assist(struct lane *l, bool latched, int64_t now_ms)
 
 void lane_start(struct lane *l, int64_t now_ms)
 {
+	ARG_UNUSED(now_ms);
 	(void)hw_out_set(l->id, HW_OUT_RED, true);
-	if (barrier_start(&l->barrier) != BARRIER_CLOSED) {
+}
+
+/* Conferência dos fins de curso, uma vez, depois da acomodação. */
+static void boot_check(struct lane *l, int64_t now_ms)
+{
+	if (now_ms < STARTUP_SETTLE_MS) {
+		return;
+	}
+	if (barrier_start(&l->barrier) == BARRIER_CLOSED) {
+		l->state = LANE_IDLE;
+	} else {
 		/* Sem inferior, contraditórios ou erro: travado até o reset. */
 		assist(l, true, now_ms);
 	}
@@ -63,12 +77,23 @@ static void buzzer_service(struct lane *l, int64_t now_ms)
 
 void lane_step(struct lane *l, int64_t now_ms)
 {
-	enum barrier_state bs = barrier_step(&l->barrier, now_ms);
+	enum barrier_state bs;
 
+	if (l->state == LANE_BOOT) {
+		boot_check(l, now_ms);
+		return;
+	}
+	bs = barrier_step(&l->barrier, now_ms);
 	buzzer_service(l, now_ms);
 
-	if (bs == BARRIER_FAULT && l->state != LANE_LOCKED) {
-		/* Toda falha de cancela é de posição ou de leitura: travada. */
+	if (l->state == LANE_LOCKED) {
+		return;
+	}
+	if (bs == BARRIER_FAULT || adc_sampler_failed()) {
+		/*
+		 * Falha de cancela (posição ou leitura) ou do ADC: travada até o
+		 * reset (REQ-09).
+		 */
 		assist(l, true, now_ms);
 	}
 }

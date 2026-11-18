@@ -10,6 +10,13 @@
 /* Período do laço principal (ms). Os modelos andam em passos de 10 ms. */
 #define TICK_MS 10
 
+/*
+ * REQ-01: espera antes de conferir os fins de curso na partida (ms). Logo
+ * após o boot as entradas ainda não refletem os modelos; o motor fica
+ * desligado e o vermelho aceso durante a espera.
+ */
+#define STARTUP_SETTLE_MS 20
+
 /* REQ-06: prazo para abrir ou fechar a cancela (ms). */
 #define MOTOR_DEADLINE_MS 2500
 

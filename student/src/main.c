@@ -8,6 +8,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
+#include "adc_sampler.h"
 #include "config.h"
 #include "hw.h"
 #include "lane.h"
@@ -29,6 +30,8 @@ int main(void)
 		lane_init(&lanes[i], (enum lane_id)i);
 	}
 
+	adc_sampler_init();
+
 	rc = hw_init(on_input);
 	if (rc != 0) {
 		printk("PARKING: falha ao iniciar o hardware (%d)\n", rc);
@@ -43,6 +46,7 @@ int main(void)
 	for (;;) {
 		int64_t now = hw_now_ms();
 
+		adc_sampler_step(now);
 		for (int i = 0; i < LANE_COUNT; i++) {
 			lane_step(&lanes[i], now);
 		}

@@ -71,6 +71,30 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   passando (parcial: 95,2% linhas, 85,3% branches).
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-18 — ADC4 assíncrono e acomodação da partida
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-10, REQ-01
+- **O que pedi:** a tarefa T5 do plano.
+- **O que a IA propôs:** `hw_adc_start`/`hw_adc_poll` em `src/hw.c`, com
+  buffer, `adc_sequence` e `k_poll_signal` estáticos, verificação por
+  `k_poll_signal_check`; `src/adc_sampler.c` com um pedido por vez,
+  alternância dos canais 17/18, amostra fresca consumida uma vez, prazo de
+  100 ms e falha travada sem reenvio; falha do ADC leva as faixas a
+  assistência travada. Suítes `tests/adc` (falsos) e `tests/hw` (drivers
+  reais contra os modelos do Renode).
+  Achado durante a verificação: logo após o boot (t = 278 µs) as entradas
+  ainda não refletem os modelos, e a faixa de saída pedia assistência sem
+  motivo. A conferência dos fins de curso passou para o primeiro passo depois
+  de `STARTUP_SETTLE_MS` (20 ms), com motor desligado e vermelho aceso.
+- **O que aceitei, mudei ou rejeitei, e por quê:** (preencher após revisar)
+- **Como verifiquei:** eventos do cenário `partial-startup`: buzzer da saída
+  acionado em t = 278 µs antes da correção e nenhuma vez depois;
+  `partial-startup` e `contradictory-limits` passam; suítes `unit:adc`,
+  `unit:barrier`, `unit:hw` e `unit:lane` passam (98,9% linhas, 88,2%
+  branches no parcial). Na suíte `hw`, o ADC real lê ~4095 nos dois canais.
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do

@@ -9,6 +9,8 @@ DEFINE_FAKE_VALUE_FUNC(int, hw_init, hw_input_handler_t);
 DEFINE_FAKE_VALUE_FUNC(int, hw_out_set, enum lane_id, enum hw_out, bool);
 DEFINE_FAKE_VALUE_FUNC(int, hw_in_get, enum lane_id, enum hw_in);
 DEFINE_FAKE_VALUE_FUNC(int64_t, hw_now_ms);
+DEFINE_FAKE_VALUE_FUNC(int, hw_adc_start, enum lane_id);
+DEFINE_FAKE_VALUE_FUNC(int, hw_adc_poll, uint16_t *);
 DEFINE_FAKE_VOID_FUNC(hw_sched_lock);
 DEFINE_FAKE_VOID_FUNC(hw_sched_unlock);
 
@@ -41,6 +43,8 @@ void hw_fake_reset(void)
 	RESET_FAKE(hw_out_set);
 	RESET_FAKE(hw_in_get);
 	RESET_FAKE(hw_now_ms);
+	RESET_FAKE(hw_adc_start);
+	RESET_FAKE(hw_adc_poll);
 	RESET_FAKE(hw_sched_lock);
 	RESET_FAKE(hw_sched_unlock);
 	FFF_RESET_HISTORY();

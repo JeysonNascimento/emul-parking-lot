@@ -9,4 +9,5 @@ target_sources(app PRIVATE
 	src/hw.c
 	src/barrier.c
 	src/lane.c
+	src/adc_sampler.c
 )
