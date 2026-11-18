@@ -95,6 +95,22 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   branches no parcial). Na suíte `hw`, o ADC real lê ~4095 nos dois canais.
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-18 — Montador de linhas, protocolo da câmera e sessões
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-11, REQ-02 (sintaxe), REQ-04 (tabela)
+- **O que pedi:** as tarefas T7, T8 (parte de protocolo) e T9 do plano.
+- **O que a IA propôs:** `src/line_parser.c` (quadro de 128 bytes com o LF,
+  modo CRLF ou só LF, ASCII imprimível, prazo de montagem de 1000 ms,
+  descarte até o LF, `lp_parse_uint` para decimais canônicos);
+  `src/camera.c` (`AT+CAPTURE`, `OK`, `ERROR`, `+PLATE` estrito, expressão
+  da placa); `src/sessions.c` (tabela por placa com capacidade do Kconfig).
+  Suíte `tests/proto`.
+- **O que aceitei, mudei ou rejeitei, e por quê:** (preencher após revisar)
+- **Como verifiquei:** suíte `unit:proto` passa (um teste errado de contagem
+  de bytes foi corrigido: `AT+CAPTURE=999999999\r\n` tem 22 bytes).
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do
