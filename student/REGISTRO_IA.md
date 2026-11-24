@@ -306,6 +306,32 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   falha, e que um cenário que falha pode estar errado ele mesmo: antes de
   mudar o código, conferir nos eventos o que de fato aconteceu.
 
+### 2026-11-24 — Testes com capacidade 1
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-04 (lotação) e regressão de todos
+- **O que pedi:** rodar o `full-lot`, os cenários públicos e os 22 cenários
+  extras com o firmware compilado com capacidade 1.
+- **O que a IA propôs:** compilar com `lab.py --capacity 1` (confirmado
+  `CONFIG_PARKING_CAPACITY=1` no `.config`) e rodar tudo nesse build, mais
+  uma fila de carros de rodízio (cada carro fica 3 s) para mostrar que a vaga
+  é liberada na saída e ocupada de novo. Nenhuma mudança de código.
+- **O que aceitei, mudei ou rejeitei, e por quê:** aceitei. Três cenários
+  extras (`x-dual-simultaneous`, `x-dual-delayed-retry` e
+  `x-exit-jam-entry-busy`) falham com capacidade 1 porque foram escritos
+  supondo mais de uma vaga: o segundo carro é identificado na entrada
+  enquanto o primeiro ainda está dentro (pago, mas sem ter cruzado a saída,
+  ou com a cancela de saída emperrada), e o firmware recusa a entrada. É o
+  comportamento correto: a vaga só é liberada pela passagem física, como o
+  avaliador conta. Conferido nos resultados: capacidade 1, 2 capturas e
+  1 abertura na entrada.
+- **Como verifiquei:** com capacidade 1, `full-lot` passa; fila do lote cheio
+  8/8 e fila de rodízio 6/6 veredictos; 19/19 cenários públicos passam;
+  19/22 cenários extras passam e os 3 restantes dependem de mais de uma vaga.
+- **O que aprendi / o que ainda preciso entender:** aprendi que a capacidade
+  é uma opção de build (1 a 8) que os cenários ocultos podem usar, e que
+  pagar não libera a vaga: só a passagem pela saída libera.
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do
