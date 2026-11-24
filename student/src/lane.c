@@ -71,6 +71,14 @@ static void assist(struct lane *l, bool latched, int64_t now_ms)
 {
 	bool already = l->state == LANE_ASSIST || l->state == LANE_LOCKED;
 
+	/*
+	 * Se a cancela estava aberta esperando o carro passar, ele pode terminar
+	 * a passagem depois (por exemplo, parado no feixe além do prazo). Essa
+	 * passagem continua valendo para as sessões; ver late_passage_step.
+	 */
+	if (l->state == LANE_PASSAGE) {
+		l->passage_late = true;
+	}
 	if (l->barrier.state != BARRIER_FAULT && l->barrier.state != BARRIER_CLOSED) {
 		/* Cancela fora de 0°: falha de posição, sempre travada. */
 		barrier_fail(&l->barrier, BARRIER_FAULT_NONE);
@@ -307,7 +315,57 @@ static void paying_step(struct lane *l, int64_t now_ms)
 	}
 }
 
-/* REQ-07: passagem completa? */
+/*
+ * REQ-07: a passagem terminou? Feixe já visto ativo, agora livre, e o carro
+ * além do limiar de ausência. Só uma passagem completa mexe nas sessões:
+ * cria a da entrada ou encerra a da saída.
+ */
+static bool passage_done(struct lane *l, int beam, int64_t now_ms)
+{
+	if (beam == 1) {
+		l->beam_seen = true;
+	}
+	if (!(l->beam_seen && beam == 0 && l->dist_fresh && l->dist > DIST_ABSENT_ABOVE)) {
+		return false;
+	}
+	if (l->id == LANE_ENTRY) {
+		(void)sessions_add(l->plate, now_ms);
+	} else {
+		(void)sessions_remove(l->plate);
+	}
+	return true;
+}
+
+/*
+ * Passagem que termina depois da assistência (faixa travada, cancela
+ * aberta). O carro está fisicamente dentro (ou fora), então a sessão segue a
+ * passagem real; se não seguisse, a lotação contada pelo firmware ficaria
+ * diferente da do estacionamento. Nada aqui mexe na cancela: ela continua
+ * parada até o reset.
+ */
+static void late_passage_step(struct lane *l, int64_t now_ms)
+{
+	uint16_t code;
+	int beam;
+
+	if (!l->passage_late) {
+		return;
+	}
+	beam = hw_in_get(l->id, HW_IN_BEAM);
+	if (beam < 0) {
+		l->passage_late = false; /* sem leitura confiável, desiste */
+		return;
+	}
+	l->dist_fresh = adc_sampler_take(l->id, &code);
+	if (l->dist_fresh) {
+		l->dist = code;
+	}
+	if (passage_done(l, beam, now_ms)) {
+		l->passage_late = false;
+	}
+}
+
+/* REQ-07: espera a passagem completa e então fecha. */
 static void passage_step(struct lane *l, int64_t now_ms)
 {
 	int beam = hw_in_get(l->id, HW_IN_BEAM);
@@ -316,16 +374,7 @@ static void passage_step(struct lane *l, int64_t now_ms)
 		assist(l, true, now_ms);
 		return;
 	}
-	if (beam == 1) {
-		l->beam_seen = true;
-	}
-	if (l->beam_seen && beam == 0 && l->dist_fresh && l->dist > DIST_ABSENT_ABOVE) {
-		if (l->id == LANE_ENTRY) {
-			/* A sessão só nasce com a passagem completa. */
-			(void)sessions_add(l->plate, now_ms);
-		} else {
-			(void)sessions_remove(l->plate);
-		}
+	if (passage_done(l, beam, now_ms)) {
 		/* REQ-08: verde apagado e vermelho aceso antes de fechar. */
 		(void)hw_out_set(l->id, HW_OUT_GREEN, false);
 		(void)hw_out_set(l->id, HW_OUT_RED, true);
@@ -409,6 +458,7 @@ void lane_step(struct lane *l, int64_t now_ms)
 	buzzer_service(l, now_ms);
 
 	if (l->state == LANE_LOCKED) {
+		late_passage_step(l, now_ms);
 		return;
 	}
 	if (bs == BARRIER_FAULT || adc_sampler_failed()) {

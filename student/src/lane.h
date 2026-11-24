@@ -53,6 +53,7 @@ struct lane {
 
 	/* Passagem (REQ-07). */
 	bool beam_seen;
+	bool passage_late; /* assistência interrompeu a passagem; ainda conta */
 
 	/* Pagamento, só na saída (REQ-05). */
 	struct line_parser pay_parser;

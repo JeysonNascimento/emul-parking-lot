@@ -265,6 +265,47 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   publicado, e a conferir pelo texto do PDF se algum requisito mudou antes
   de mexer no código.
 
+### 2026-11-24 — Testes extras contra os cenários ocultos; passagem tardia
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** REQ-04, REQ-07 (e regressão de todos)
+- **O que pedi:** mais testes de cenário para reduzir as surpresas dos
+  cenários ocultos.
+- **O que a IA propôs:** (1) rodar o simulador de fila de carros do próprio
+  laboratório (`scripts/assess.py --lot`) com perfis variados: câmera que
+  falha ou não responde, pagamento atrasado, cancelado, malformado ou sem
+  resposta, placa lida errada na saída, motorista que hesita ou desiste no
+  pagamento, carro parado no feixe, obstrução no fechamento e lotação;
+  (2) 22 cenários novos escritos à mão, fora de `student/` e não entregues:
+  as duas faixas ao mesmo tempo, falhas na faixa de saída enquanto a entrada
+  trabalha, resposta antiga da câmera chegando durante o pedido seguinte,
+  abandono na identificação e retorno, carro parado na faixa de histerese com
+  ruído, cancelamento no terminal, reset que apaga a sessão, permanência longa
+  e respostas byte a byte. O simulador achou uma falha: um carro que ficava
+  no feixe além dos 10 s gerava assistência (correto), mas, quando terminava
+  de passar, o firmware não criava a sessão. O avaliador conta a sessão pela
+  passagem física, então a lotação do firmware ficava diferente da real
+  (risco de `capacity_exceeded`) e esse carro não conseguia sair. Correção em
+  `lane.c`: `assist` marca `passage_late` quando interrompe uma passagem, e
+  `late_passage_step`, chamada no estado LOCKED, registra a passagem quando
+  ela termina, sem nunca mexer na cancela. Três testes de unidade novos.
+- **O que aceitei, mudei ou rejeitei, e por quê:** aceitei a correção, porque
+  segue a passagem real e mantém a cancela travada até o reset (REQ-07 e
+  REQ-09 continuam valendo). Três cenários meus falharam por erro de
+  montagem, não do firmware, e foram corrigidos: o carro recuava antes da
+  primeira captura (o firmware só começa por volta de 410 ms, depois da
+  inicialização do display); a resposta byte a byte passava de 1000 ms (o
+  descarte é o comportamento exigido); a janela do verde era apertada demais.
+- **Como verifiquei:** fila de carros: 5 perfis, todos os veredictos passam
+  (o `linger_in_beam` falhava antes da correção e passa depois); 22/22
+  cenários novos e os 2 extras antigos passam; `firmware-coverage.py`:
+  19/19 cenários públicos e 6/6 suítes passam, 99,1% linhas e 94,8%
+  branches; `static-check.py`: 0 achados.
+- **O que aprendi / o que ainda preciso entender:** aprendi que o estado do
+  firmware (sessões) precisa acompanhar o mundo físico mesmo depois de uma
+  falha, e que um cenário que falha pode estar errado ele mesmo: antes de
+  mudar o código, conferir nos eventos o que de fato aconteceu.
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do

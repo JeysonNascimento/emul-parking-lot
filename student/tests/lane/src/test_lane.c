@@ -480,6 +480,54 @@ ZTEST(lane, test_passage_deadline_locks_open)
 	zassert_equal(sessions_count(), 0);
 }
 
+ZTEST(lane, test_late_passage_still_creates_session)
+{
+	int64_t entry_ms;
+
+	/* Carro para no feixe além do prazo: assistência travada. */
+	enter_until_green("ABC1D23");
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 1;
+	sim_dist[LANE_ENTRY] = 0;
+	run(PASSAGE_TIMEOUT_MS);
+	zassert_equal(lane.state, LANE_LOCKED);
+
+	/* Feixe livre, mas o carro ainda perto: não é passagem. */
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 0;
+	sim_dist[LANE_ENTRY] = MID;
+	run(100);
+	zassert_equal(sessions_count(), 0);
+
+	/* Depois ele termina de passar: o carro está dentro, a sessão nasce. */
+	sim_dist[LANE_ENTRY] = FAR;
+	run(TICK_MS);
+	zassert_true(sessions_find("ABC1D23", &entry_ms));
+	zassert_equal(entry_ms, t);
+	zassert_equal(lane.state, LANE_LOCKED, "segue travada até o reset");
+	zassert_equal(fake_out_on_count[LANE_ENTRY][HW_OUT_ENABLE], 1, "não fecha");
+
+	/* Só uma vez: o feixe de novo não mexe mais nas sessões. */
+	sessions_clear();
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 1;
+	run(100);
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 0;
+	run(100);
+	zassert_equal(sessions_count(), 0);
+}
+
+ZTEST(lane, test_late_passage_stops_on_beam_error)
+{
+	enter_until_green("ABC1D23");
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 1;
+	run(PASSAGE_TIMEOUT_MS);
+	zassert_equal(lane.state, LANE_LOCKED);
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = -EIO;
+	run(100);
+	fake_in[LANE_ENTRY][HW_IN_BEAM] = 0;
+	sim_dist[LANE_ENTRY] = FAR;
+	run(100);
+	zassert_equal(sessions_count(), 0, "leitura inválida encerra a observação");
+}
+
 ZTEST(lane, test_obstruction_during_close_locks_without_reversing)
 {
 	int enables;
@@ -685,6 +733,24 @@ ZTEST(lane, test_paid_exit_passage_removes_session)
 	reply_payment(lane.uuid, "PAID", lane.amount);
 	run(100);
 	zassert_equal(lane.state, LANE_IDLE);
+}
+
+ZTEST(lane, test_late_exit_passage_removes_session)
+{
+	exit_until_paying(1000);
+	reply_payment(lane.uuid, "PAID", lane.amount);
+	run(TICK_MS);
+	arm_at_top();
+	run(TICK_MS);
+	zassert_equal(lane.state, LANE_PASSAGE);
+	fake_in[LANE_EXIT][HW_IN_BEAM] = 1;
+	run(PASSAGE_TIMEOUT_MS);
+	zassert_equal(lane.state, LANE_LOCKED);
+	zassert_equal(sessions_count(), 1);
+	fake_in[LANE_EXIT][HW_IN_BEAM] = 0;
+	sim_dist[LANE_EXIT] = FAR;
+	run(TICK_MS);
+	zassert_equal(sessions_count(), 0, "o carro saiu de fato");
 }
 
 ZTEST(lane, test_tariff_overflow_requests_assistance)

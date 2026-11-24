@@ -260,12 +260,19 @@ responsabilidade é do firmware, e o cenário `jam` prova isso.
    FECHANDO.
 - Prazo de 10000 ms vencido → ASSISTÊNCIA. A cancela está aberta (posição de falha), então
   **não fecha sozinha**.
+- **Passagem tardia.** Se o carro termina a passagem depois do prazo (parado no feixe e depois
+  segue), a sessão ainda é criada (entrada) ou encerrada (saída). A faixa continua travada e a
+  cancela parada. Motivo: o avaliador conta as sessões pela passagem física; sem isso, a
+  lotação do firmware ficaria diferente da real e um carro a mais poderia entrar
+  (`capacity_exceeded`), ou um carro que está dentro não conseguiria sair. Achado com o
+  simulador de fila (`assess.py --lot`, perfil `linger_in_beam`).
 
 **Por que as duas condições?** O feixe sozinho pode ser um pedestre. A distância sozinha pode
 ser o carro dando ré.
 
-**Onde (no código entregue).** `lane.c`, `passage_step` (e o caso `LANE_OPENING` de
-`state_step`, que acende o verde e marca o prazo).
+**Onde (no código entregue).** `lane.c`, `passage_step` e `passage_done` (e o caso
+`LANE_OPENING` de `state_step`, que acende o verde e marca o prazo); a passagem tardia em
+`late_passage_step`, chamada no estado LOCKED, com a marca `passage_late` posta em `assist`.
 
 **Mudança ao vivo provável.** Mudar o prazo de 10000 ms, ou exigir o feixe inativo por N ms.
 
