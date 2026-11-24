@@ -176,6 +176,22 @@ Uma entrada por tarefa relevante (um requisito, um bug, uma refatoração).
   19/19 cenários e 6/6 suítes passam, 99,1% linhas e 94,7% branches.
 - **O que aprendi / o que ainda preciso entender:**
 
+### 2026-11-23 — Atualização para a v1.0.1 do laboratório
+
+- **Aluno:** Jeyson Nascimento
+- **Requisito(s):** —
+- **O que pedi:** analisar e incorporar a correção publicada na v1.0.1.
+- **O que a IA propôs:** a v1.0.1 muda só `scripts/lab.py` (aceita qualquer
+  data de build do Renode 1.17.0 do commit `f1dd1b4af`), o teste dele e a
+  documentação de instalação; nenhum requisito do desafio mudou. Descartar o
+  ajuste local do `lab.py` e fazer merge da tag `v1.0.1` no branch `solucao`.
+- **O que aceitei, mudei ou rejeitei, e por quê:** aceitei; a correção oficial
+  substitui o ajuste local, e o `lab.py` voltou a ser o do curso, sem mudança.
+- **Como verifiquei:** `tests/test_lab.py` (10 testes) passa;
+  `firmware-coverage.py` com o `lab.py` oficial: 19/19 cenários e 6/6 suítes
+  passam, 99,1% linhas e 94,7% branches.
+- **O que aprendi / o que ainda preciso entender:**
+
 ## Código de terceiros
 
 Trechos copiados ou adaptados de outras fontes (documentação, exemplos do
